@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-palmetto-forms — Universal form handler for PalmettoAI client sites.
-Accepts POST from any client site, routes to the correct email via Resend.
-
-Endpoint: POST /submit
-Required form fields:
-  - client_id   : matches an entry in clients.json
-  - _redirect   : URL to redirect to after success (optional, defaults to /)
-All other fields are included in the email body.
-"""
 import os
 import json
 import resend
@@ -53,7 +43,7 @@ def build_email_html(client_name, fields):
       </table>
     </div>
     <div style="padding:12px 24px;background:#f9f9f9;border-top:1px solid #eee">
-      <p style="margin:0;font-size:0.75rem;color:#999">Sent by PalmettoAI Forms — palmettoaiautomation.com</p>
+      <p style="margin:0;font-size:0.75rem;color:#999">Sent by PalmettoAI Forms \u2014 palmettoaiautomation.com</p>
     </div>
   </div>
 </body>
@@ -64,7 +54,6 @@ def build_email_html(client_name, fields):
 def submit():
     data = request.form.to_dict()
 
-    # Honeypot spam check
     if data.get("_honeypot", "").strip():
         return redirect(data.get("_redirect", "/"), 302)
 
@@ -88,10 +77,10 @@ def submit():
         resend.Emails.send({
             "from": FROM_EMAIL,
             "to": client["email"],
-            "subject": f"New Estimate Request — {client['name']}",
+            "subject": f"New Estimate Request \u2014 {client['name']}",
             "html": build_email_html(client["name"], fields),
         })
-        app.logger.info(f"Email sent for {client_id} → {client['email']}")
+        app.logger.info(f"Email sent for {client_id} \u2192 {client['email']}")
     except Exception as e:
         app.logger.error(f"Resend error for {client_id}: {e}")
         return jsonify({"error": "Failed to send email"}), 500
@@ -111,4 +100,5 @@ def index():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    print(f"Starting Flask on port {port}")
     app.run(host="0.0.0.0", port=port)

@@ -1,7 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "startCommand": "gunicorn app:app -c gunicorn.conf.py",
+    "startCommand": "/bin/sh /app/entrypoint.sh",
     "healthcheckPath": "/health"
   }
 }

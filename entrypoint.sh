@@ -1,3 +1,5 @@
 #!/bin/sh
-set -e
-exec gunicorn app:app --bind "0.0.0.0:${PORT}" --workers 2 --timeout 30 --access-logfile -
+echo "=== ENV DEBUG ==="
+env | grep -E 'PORT|RAILWAY' | sort
+echo "=== STARTING ==="
+python3 app.py
