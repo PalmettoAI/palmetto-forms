@@ -4,6 +4,7 @@ import json
 import resend
 from flask import Flask, request, redirect, jsonify
 from flask_cors import CORS
+from waitress import serve
 
 app = Flask(__name__)
 CORS(app)
@@ -43,7 +44,7 @@ def build_email_html(client_name, fields):
       </table>
     </div>
     <div style="padding:12px 24px;background:#f9f9f9;border-top:1px solid #eee">
-      <p style="margin:0;font-size:0.75rem;color:#999">Sent by PalmettoAI Forms \u2014 palmettoaiautomation.com</p>
+      <p style="margin:0;font-size:0.75rem;color:#999">Sent by PalmettoAI Forms — palmettoaiautomation.com</p>
     </div>
   </div>
 </body>
@@ -53,7 +54,6 @@ def build_email_html(client_name, fields):
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.form.to_dict()
-
     if data.get("_honeypot", "").strip():
         return redirect(data.get("_redirect", "/"), 302)
 
@@ -68,7 +68,6 @@ def submit():
 
     client = clients.get(client_id)
     if not client:
-        app.logger.warning(f"Unknown client_id: '{client_id}'")
         return jsonify({"error": f"Unknown client: {client_id}"}), 400
 
     fields = {k: v for k, v in data.items() if k not in SKIP_FIELDS and v.strip()}
@@ -77,12 +76,11 @@ def submit():
         resend.Emails.send({
             "from": FROM_EMAIL,
             "to": client["email"],
-            "subject": f"New Estimate Request \u2014 {client['name']}",
+            "subject": f"New Estimate Request — {client['name']}",
             "html": build_email_html(client["name"], fields),
         })
-        app.logger.info(f"Email sent for {client_id} \u2192 {client['email']}")
     except Exception as e:
-        app.logger.error(f"Resend error for {client_id}: {e}")
+        app.logger.error(f"Resend error: {e}")
         return jsonify({"error": "Failed to send email"}), 500
 
     return redirect(redirect_url, 302)
@@ -100,5 +98,5 @@ def index():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"Starting Flask on port {port}")
-    app.run(host="0.0.0.0", port=port)
+    print(f"Starting palmetto-forms on port {port}")
+    serve(app, host="0.0.0.0", port=port, threads=4)
