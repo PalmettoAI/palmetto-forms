@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import json
 import resend
 from flask import Flask, request, redirect, jsonify
@@ -14,6 +15,49 @@ FROM_EMAIL = os.environ.get("FROM_EMAIL", "forms@palmettoaiautomation.com")
 CLIENTS_FILE = os.path.join(os.path.dirname(__file__), "clients.json")
 
 SKIP_FIELDS = {"client_id", "_redirect", "_honeypot"}
+
+# Spam filter — every rule below is decisive on its own, so keep each one
+# strict enough that a real local-business lead can't trip it.
+URL_RE = re.compile(r"https?://|www\.", re.IGNORECASE)
+CYRILLIC_RE = re.compile(r"[Ѐ-ӿ]")
+MARKUP_RE = re.compile(r"\[url=|\[link=|<a\s+href", re.IGNORECASE)
+SPAM_PHRASES = [
+    # pharma / adult
+    "viagra", "cialis", "porn", "escort service", "sex chat", "onlyfans",
+    # gambling
+    "casino", "online gambling", "betting site",
+    # money schemes
+    "crypto invest", "bitcoin invest", "binary options", "forex signal",
+    "earn money online", "make money online", "make money fast",
+    "payday loan", "quick loan", "loan offer",
+    # unsolicited seo/marketing pitches (their offer, not a service request)
+    "buy backlinks", "backlinks package", "guest post", "cheap seo",
+    "monthly seo package", "we can rank your", "rank your website on",
+    "first page of google", "increase your website traffic", "dofollow",
+    # bot artifacts
+    "telegra.ph", "t.me/", "xevil", "captcha bypass",
+]
+
+
+def spam_reasons(data, fields):
+    """Return the list of reasons a submission is obvious spam (empty = clean)."""
+    reasons = []
+    if data.get("_honeypot", "").strip():
+        reasons.append("honeypot filled")
+    text = " ".join(fields.values()).lower()
+    url_count = len(URL_RE.findall(text))
+    if url_count >= 3:
+        reasons.append(f"{url_count} links")
+    if URL_RE.search(fields.get("name", "")):
+        reasons.append("link in name field")
+    if MARKUP_RE.search(text):
+        reasons.append("html/bbcode markup")
+    if CYRILLIC_RE.search(text):
+        reasons.append("cyrillic text")
+    hits = [p for p in SPAM_PHRASES if p in text]
+    if hits:
+        reasons.append("phrases: " + ", ".join(hits[:5]))
+    return reasons
 
 
 def load_clients():
@@ -54,11 +98,18 @@ def build_email_html(client_name, fields):
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.form.to_dict()
-    if data.get("_honeypot", "").strip():
-        return redirect(data.get("_redirect", "/"), 302)
-
+    redirect_url = data.get("_redirect", "/").strip() or "/"
     client_id = data.get("client_id", "").strip()
-    redirect_url = data.get("_redirect", "/").strip()
+
+    fields = {k: v for k, v in data.items() if k not in SKIP_FIELDS and v.strip()}
+
+    reasons = spam_reasons(data, fields)
+    if reasons:
+        # Pretend success so bots don't learn what tripped the filter
+        app.logger.warning(
+            f"Spam blocked [{client_id}] from {data.get('email', '?')}: {'; '.join(reasons)}"
+        )
+        return redirect(redirect_url, 302)
 
     try:
         clients = load_clients()
@@ -69,8 +120,6 @@ def submit():
     client = clients.get(client_id)
     if not client:
         return jsonify({"error": f"Unknown client: {client_id}"}), 400
-
-    fields = {k: v for k, v in data.items() if k not in SKIP_FIELDS and v.strip()}
 
     try:
         resend.Emails.send({
